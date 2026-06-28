@@ -1,0 +1,21 @@
+AIN		Name			Power		Status
+------------------------------------------------------------------------
+116570567446	Waschmaschine	0.18 W	online
+116570567437	Arbeitszimmer 1	17.56 W	online
+116570591516	Toaster	0 W	online
+116570591520	Wohnzimmer 1	0 W	online
+116300420063	MSI	0 W	offline
+116300420075	Kaffeemaschine	0 W	online
+116300420062	Geekom	22.17 W	online
+116300420071	Arbeitszimmer 2	0 W	online
+116570591512	Solar Dach	0 W	offline
+116570591519	Solar Balkon	0 W	offline
+160000036532	Stromzähler	-2 W	online
+116570955749	DECT Keller	[no energy meter]	online
+116300581556	Asus AIO	0 W	online
+116300581548	Solakon ONE	73.02 W	online
+116300581561	Raspberry PI	0 W	online
+116300581546	FRITZ!Box 6490	0 W	offline
+grp8e8f4f-4221D2DD3	Computer	39.71 W	online
+grp8e8f4f-4221C3448	Küchengeräte	0 W	online
+grp8e8f4f-41FF0CF14	Solar	58.79 W	online

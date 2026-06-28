@@ -1,0 +1,59 @@
+# Build image for Raspberry Pi OS bookworm — cross-compilation for aarch64
+#
+# Strategy: x86_64 Debian 12 container with Debian's multiarch support.
+# Adding the arm64 architecture makes apt install aarch64 libraries alongside
+# the native x86_64 ones.  The g++-aarch64-linux-gnu cross-compiler targets
+# those libraries directly — no QEMU / binfmt_misc required on the host.
+#
+# Raspberry Pi OS bookworm is Debian 12 for aarch64, so the resulting binary
+# and .deb package are binary-compatible.
+#
+# Cross-compiler binary prefix: aarch64-linux-gnu-
+# OpenSSL staging root:          /opt/openssl-aarch64
+#   include/ → /usr/include
+#   lib/     → /usr/lib/aarch64-linux-gnu
+# CMake toolchain file:          /src/cmake/toolchain-raspbian-aarch64.cmake
+
+FROM debian:12
+
+LABEL org.opencontainers.image.title="solakon-one-fritz-powerregulator-builder-raspbian-aarch64"
+LABEL org.opencontainers.image.description="Cross-build environment for solakon-one-fritz-powerregulator targeting Raspberry Pi OS bookworm (aarch64)"
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# ── Enable arm64 multiarch ────────────────────────────────────────────────────
+RUN dpkg --add-architecture arm64
+
+# ── Base build tools + aarch64 cross-compiler ─────────────────────────────────
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        cmake \
+        ninja-build \
+        g++-aarch64-linux-gnu \
+        make \
+        git \
+        pkg-config \
+        gzip \
+        tar \
+    && rm -rf /var/lib/apt/lists/*
+
+# ── System libraries (arm64 multiarch) ───────────────────────────────────────
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libssl-dev:arm64 \
+    && rm -rf /var/lib/apt/lists/*
+
+# ── Create a unified OpenSSL staging root ─────────────────────────────────────
+RUN mkdir -p /opt/openssl-aarch64 \
+    && ln -s /usr/include               /opt/openssl-aarch64/include \
+    && ln -s /usr/lib/aarch64-linux-gnu /opt/openssl-aarch64/lib
+
+# ── DEB packaging tools ───────────────────────────────────────────────────────
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        dpkg-dev \
+        fakeroot \
+    && rm -rf /var/lib/apt/lists/*
+
+# ── Ensure the build directory exists and is writable ─────────────────────────
+RUN mkdir -p /build && chmod 777 /build
+
+WORKDIR /src

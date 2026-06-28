@@ -1,0 +1,56 @@
+# Build image for Raspberry Pi OS bookworm — cross-compilation for armhf (32-bit ARM)
+#
+# Strategy: x86_64 Debian 12 container with Debian's multiarch support.
+# Adding the armhf architecture makes apt install 32-bit ARM libraries alongside
+# the native x86_64 ones.  The g++-arm-linux-gnueabihf cross-compiler targets
+# those libraries directly — no QEMU / binfmt_misc required on the host.
+#
+# Cross-compiler binary prefix: arm-linux-gnueabihf-
+# OpenSSL staging root:          /opt/openssl-armhf
+#   include/ → /usr/include
+#   lib/     → /usr/lib/arm-linux-gnueabihf
+# CMake toolchain file:          /src/cmake/toolchain-raspbian-armhf.cmake
+
+FROM debian:12
+
+LABEL org.opencontainers.image.title="solakon-one-fritz-powerregulator-builder-raspbian-armhf"
+LABEL org.opencontainers.image.description="Cross-build environment for solakon-one-fritz-powerregulator targeting Raspberry Pi OS bookworm (armhf / 32-bit)"
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# ── Enable armhf multiarch ────────────────────────────────────────────────────
+RUN dpkg --add-architecture armhf
+
+# ── Base build tools + armhf cross-compiler ───────────────────────────────────
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        cmake \
+        ninja-build \
+        g++-arm-linux-gnueabihf \
+        make \
+        git \
+        pkg-config \
+        gzip \
+        tar \
+    && rm -rf /var/lib/apt/lists/*
+
+# ── System libraries (armhf multiarch) ───────────────────────────────────────
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libssl-dev:armhf \
+    && rm -rf /var/lib/apt/lists/*
+
+# ── Create a unified OpenSSL staging root ─────────────────────────────────────
+RUN mkdir -p /opt/openssl-armhf \
+    && ln -s /usr/include               /opt/openssl-armhf/include \
+    && ln -s /usr/lib/arm-linux-gnueabihf /opt/openssl-armhf/lib
+
+# ── DEB packaging tools ───────────────────────────────────────────────────────
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        dpkg-dev \
+        fakeroot \
+    && rm -rf /var/lib/apt/lists/*
+
+# ── Ensure the build directory exists and is writable ─────────────────────────
+RUN mkdir -p /build && chmod 777 /build
+
+WORKDIR /src

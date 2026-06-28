@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Solakon ONE / FRITZ!Box Power Regulator
+Comment=Monitor and override the solakon-one-fritz-powerregulator REST API
+Exec=solakon-one-fritz-powerregulator-ui
+Icon=solakon-one-fritz-powerregulator
+Terminal=false
+Categories=Utility;Network;

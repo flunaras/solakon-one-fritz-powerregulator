@@ -1,0 +1,46 @@
+# Build image for Ubuntu 24.04 (noble) — solakon-one-fritz-powerregulator-ui (x86_64), DEB packaging
+#
+# Dependencies fetched via CMake FetchContent at configure time:
+#   QtKeychain 0.14.3 (platform secret-store bindings; header-only build deps below)
+#
+# System libraries: Qt6 (Widgets, Network, Charts), libsecret (Secret Service backend
+# used by QtKeychain on Linux), git (needed by FetchContent).
+
+FROM ubuntu:24.04
+
+LABEL org.opencontainers.image.title="solakon-one-fritz-powerregulator-ui-builder-ubuntu-24.04"
+LABEL org.opencontainers.image.description="Build environment for solakon-one-fritz-powerregulator-ui on Ubuntu 24.04 noble (x86_64)"
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# ── Base build tools ──────────────────────────────────────────────────────────
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        cmake \
+        ninja-build \
+        g++ \
+        make \
+        git \
+        pkg-config \
+        gzip \
+        tar \
+    && rm -rf /var/lib/apt/lists/*
+
+# ── Qt6 + secret-store libraries ──────────────────────────────────────────────
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        qt6-base-dev \
+        qt6-base-dev-tools \
+        libqt6charts6-dev \
+        libsecret-1-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# ── DEB packaging tools ───────────────────────────────────────────────────────
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        dpkg-dev \
+        fakeroot \
+    && rm -rf /var/lib/apt/lists/*
+
+# ── Ensure the build directory exists and is writable ─────────────────────────
+RUN mkdir -p /build && chmod 777 /build
+
+WORKDIR /src

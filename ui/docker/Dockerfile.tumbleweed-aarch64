@@ -1,0 +1,162 @@
+# Build image for openSUSE Tumbleweed — cross-compilation for aarch64
+# (solakon-one-fritz-powerregulator-ui, the Qt6 desktop client)
+#
+# Strategy: same as the parent project's docker/Dockerfile.tumbleweed-aarch64
+# (x86_64 container + the aarch64-suse-linux GCC14 cross-compiler from the
+# standard Tumbleweed OSS repo, no QEMU / binfmt_misc required), extended
+# with a much larger aarch64 sysroot: Qt6 (Core/Gui/Widgets/Network/Charts/
+# DBus/OpenGL/OpenGLWidgets), libsecret, and glib2.
+#
+# `zypper --root`-based cross-arch chroots turned out not to be viable here:
+# libzypp resolves candidate packages strictly against the *host's own*
+# architecture (x86_64) with no supported override left in this libzypp
+# version (the once-documented zypp.conf "arch=" key no longer exists), so
+# `zypper install` simply reports "no provider found" for every aarch64-only
+# package even though the repository metadata clearly lists them. Properly
+# emulating aarch64 would require qemu-user-static + binfmt_misc registration
+# (a much larger, privileged-container change this project deliberately
+# avoids, per the parent project's own aarch64 Dockerfile).
+#
+# Instead -- exactly like the CLI/service build's own OpenSSL extraction --
+# each required aarch64 .rpm is located directly on the openSUSE ports
+# mirror's flat per-arch directory listing and pulled down with plain curl,
+# then only its file *contents* are extracted with rpm2cpio | cpio (no RPM
+# database, no install, no scriptlets -- so nothing aarch64 ever executes on
+# this x86_64 host). Deliberately NOT using the qt6-base-devel/qt6-gui-devel
+# *meta* packages here: on a real system those pull in the full X11/Wayland/
+# Mesa/systemd dependency graph (~250 packages) purely so the platform QPA
+# plugins have everything to build against -- none of which our own code
+# ever includes or needs, and --allow-shlib-undefined already covers the
+# rest (transitive .so dependencies we never call into directly). Only the
+# specific per-module packages actually touched at compile/link time are
+# extracted below.
+#
+# Cross-compiler binary prefix: aarch64-suse-linux-
+# Sysroot location:              /usr/aarch64-suse-linux/sys-root
+# CMake toolchain file:          /src/cmake/toolchain-aarch64.cmake
+
+FROM opensuse/tumbleweed:latest
+
+LABEL org.opencontainers.image.title="solakon-one-fritz-powerregulator-ui-builder-tumbleweed-aarch64"
+LABEL org.opencontainers.image.description="Cross-build environment for solakon-one-fritz-powerregulator-ui on openSUSE Tumbleweed (target aarch64)"
+
+# Sync the base image to a fully consistent package set first -- Tumbleweed
+# base images can otherwise contain a partially-stale snapshot where, e.g.,
+# libcurl4 was rebuilt against a newer libngtcp2-crypto than what's actually
+# installed, breaking zypper itself the moment anything pulls in a fresher
+# libcurl4 as a transitive dependency (as qt6-base-devel does below).
+RUN zypper --non-interactive dup --no-allow-vendor-change
+
+# ── Base build tools + native (host) Qt6 (for moc/uic/rcc; see QT_HOST_PATH) ─
+RUN zypper --non-interactive remove busybox-gawk || true && \
+    zypper --non-interactive install --no-recommends \
+        cmake \
+        ninja \
+        make \
+        git \
+        pkg-config \
+        gzip \
+        tar \
+        which \
+        curl \
+        cpio \
+        gawk \
+        rpm-build \
+        qt6-base-devel \
+        qt6-charts-devel \
+        qt6-tools-devel
+
+# ── aarch64 cross-compiler ────────────────────────────────────────────────────
+RUN zypper --non-interactive install --no-recommends \
+        cross-aarch64-gcc14 \
+        cross-aarch64-binutils
+
+# ── Assemble the aarch64 target sysroot (Qt6 + libsecret + glib2) ────────────
+#
+# Each package's *own* files only (rpm2cpio | cpio) -- deliberately not
+# resolving/extracting its RPM "Requires" chain, since that chain describes
+# what a fully-working live aarch64 system would need, not what our
+# cross-compile/link step actually touches (see comment above).
+ENV SYSROOT=/usr/aarch64-suse-linux/sys-root
+ENV PORTS_BASE=https://download.opensuse.org/ports/aarch64/tumbleweed/repo/oss
+
+RUN set -euo pipefail; \
+    mkdir -p "${SYSROOT}"; \
+    cd /tmp; \
+    listing="$(curl -fsSL "${PORTS_BASE}/aarch64/")"; \
+    fetch_extract() { \
+        local pkg="$1" version_prefix="${2:-}"; \
+        local url; \
+        if [[ -n "${version_prefix}" ]]; then \
+            url=$(printf '%s' "${listing}" | grep -oP "href=\"\K\./${pkg}-${version_prefix}[^\"]+\.aarch64\.rpm" | head -1 | sed 's|^\./||'); \
+        else \
+            url=$(printf '%s' "${listing}" | grep -oP "href=\"\K\./${pkg}-[0-9][^\"]+\.aarch64\.rpm" | head -1 | sed 's|^\./||'); \
+        fi; \
+        if [[ -z "${url}" ]]; then \
+            echo "ERROR: no aarch64 package found for '${pkg}' on ${PORTS_BASE}/aarch64/" >&2; \
+            exit 1; \
+        fi; \
+        echo "Fetching: ${PORTS_BASE}/aarch64/${url}"; \
+        curl -fsSL "${PORTS_BASE}/aarch64/${url}" -o pkg.rpm; \
+        (cd "${SYSROOT}" && rpm2cpio /tmp/pkg.rpm | cpio -idm --quiet); \
+        rm -f pkg.rpm; \
+    }; \
+    # Runtime shared libraries (linked against; headers come from the
+    # matching -devel package below).
+    for pkg in \
+        libQt6Core6 \
+        libQt6Gui6 \
+        libQt6Widgets6 \
+        libQt6Network6 \
+        libQt6DBus6 \
+        libQt6Charts6 \
+        libQt6OpenGL6 \
+        libQt6OpenGLWidgets6 \
+        libsecret-1-0 \
+        libglib-2_0-0 \
+        libgobject-2_0-0 \
+        libgio-2_0-0 \
+        Mesa-libEGL1 \
+        Mesa-libGL1 \
+        libglvnd \
+        libpcre2-8-0 \
+        libffi8 \
+    ; do fetch_extract "${pkg}"; done; \
+    # Headers, CMake package config, and pkg-config files.
+    for pkg in \
+        qt6-base-common-devel \
+        qt6-macros \
+        qt6-core-devel \
+        qt6-gui-devel \
+        qt6-widgets-devel \
+        qt6-network-devel \
+        qt6-dbus-devel \
+        qt6-charts-devel \
+        qt6-opengl-devel \
+        qt6-openglwidgets-devel \
+        libsecret-devel \
+        Mesa-libEGL-devel \
+        Mesa-libGL-devel \
+        Mesa-libGLESv2-devel \
+        Mesa-KHR-devel \
+        libglvnd-devel \
+        pcre2-devel \
+        libffi-devel \
+        zlib-devel \
+        libmount-devel \
+        libselinux-devel \
+        libblkid-devel \
+        libsepol-devel \
+        libeconf-devel \
+        libgcrypt-devel \
+        libgpg-error-devel \
+    ; do fetch_extract "${pkg}"; done; \
+    # glib2-devel: the ports mirror also carries an unrelated legacy
+    # "GLib 1.2" compat package under the same name -- pin the version
+    # prefix so the GLib-2 one (matching libglib-2_0-0 above) is selected.
+    fetch_extract "glib2-devel" "2\."
+
+# ── Ensure the build directory exists and is writable ─────────────────────────
+RUN mkdir -p /build && chmod 777 /build
+
+WORKDIR /src

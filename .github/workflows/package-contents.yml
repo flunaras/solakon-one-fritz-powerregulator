@@ -1,0 +1,50 @@
+name: package-contents
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  verify-packages:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: x86_64
+            deb_distro: debian-12-x86_64
+            rpm_distro: opensuse-tumbleweed-x86_64
+            deb_path: out/debian/12/amd64/solakon-one-fritz-powerregulator_1.0.0-1_amd64.deb
+            rpm_path: build/opensuse/tumbleweed/x86_64/solakon-one-fritz-powerregulator-1.0.0-Linux.rpm
+            rpm_spec: build/opensuse/tumbleweed/x86_64/_CPack_Packages/Linux/RPM/SPECS/solakon-one-fritz-powerregulator.spec
+          - label: arm64
+            deb_distro: raspbian-bookworm-aarch64
+            rpm_distro: opensuse-tumbleweed-aarch64
+            deb_path: out/raspbian/bookworm/arm64/solakon-one-fritz-powerregulator_1.0.0-1_arm64.deb
+            rpm_path: build/opensuse/tumbleweed/aarch64/solakon-one-fritz-powerregulator-1.0.0-Linux.rpm
+            rpm_spec: build/opensuse/tumbleweed/aarch64/_CPack_Packages/Linux/RPM/SPECS/solakon-one-fritz-powerregulator.spec
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Ensure tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y rpm
+
+      - name: Build DEB (${{ matrix.label }})
+        run: ./docker/build.sh --distro ${{ matrix.deb_distro }}
+
+      - name: Build RPM (${{ matrix.label }})
+        run: ./docker/build.sh --distro ${{ matrix.rpm_distro }}
+
+      - name: Verify package payload and config metadata
+        run: |
+          chmod +x scripts/verify-packages.sh
+          scripts/verify-packages.sh \
+            --deb ${{ matrix.deb_path }} \
+            --rpm ${{ matrix.rpm_path }} \
+            --rpm-spec ${{ matrix.rpm_spec }}

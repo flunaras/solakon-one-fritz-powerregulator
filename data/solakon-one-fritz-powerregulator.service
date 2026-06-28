@@ -1,0 +1,56 @@
+[Unit]
+Description=Solakon ONE export power controller
+Documentation=https://github.com/flunaras/solakon-one-fritz-powerregulator
+After=network.target
+
+[Service]
+Type=simple
+# Settings are read from /etc/solakon-one-fritz-powerregulator/solakon-one-fritz-powerregulator.conf.
+# Edit that file to configure the Solakon ONE address, FRITZ!Box credentials,
+# the target device AIN, the poll interval, and the log level.
+#
+# To override individual settings without editing either file, create a
+# drop-in (systemctl edit solakon-one-fritz-powerregulator).  Example:
+#   [Service]
+#   ExecStart=
+#   ExecStart=/usr/bin/solakon-one-fritz-powerregulator \
+#     --config /etc/solakon-one-fritz-powerregulator/solakon-one-fritz-powerregulator.conf \
+#     --solakon-host 192.168.1.148 \
+#     --fritz-ain 087610123456 \
+#     --log-level 3 \
+#     run-loop --interval 30
+ExecStart=/usr/bin/solakon-one-fritz-powerregulator \
+    --config /etc/solakon-one-fritz-powerregulator/solakon-one-fritz-powerregulator.conf \
+    run-loop
+Restart=on-failure
+RestartSec=10s
+
+# Run as a transient dynamic user — systemd allocates an unprivileged
+# UID/GID at service start time; no pre-created account is required.
+# DynamicUser=yes implies ProtectSystem=strict, so the root filesystem is
+# mounted read-only; the service can still read world-readable files such
+# as /etc/solakon-one-fritz-powerregulator/solakon-one-fritz-powerregulator.conf (mode 644).
+DynamicUser=yes
+
+# StateDirectory creates (and makes writable for the dynamic user) the
+# /var/lib/solakon-one-fritz-powerregulator directory used to persist the
+# --min-control-soc low-SoC hold state across restarts (see --state-file;
+# default state-file path is /var/lib/solakon-one-fritz-powerregulator/
+# state.json, matching this directory). Required because ProtectSystem=strict
+# below otherwise mounts /var/lib read-only.
+StateDirectory=solakon-one-fritz-powerregulator
+
+# Security hardening
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+
+[Install]
+WantedBy=multi-user.target
